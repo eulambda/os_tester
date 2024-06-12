@@ -20,4 +20,4 @@ RUN chmod +x ./tester.sh
 RUN make fs.img xv6.img
 
 FROM base as tester
-# ENTRYPOINT ["./tester.sh","obj1_1_test","obj1_2_test","obj1_3_test","obj1_4_test","obj2_1_test","obj2_2_test","obj2_3_test","obj2_4_test","obj3_1_test","obj3_2_test"]
+ENTRYPOINT ["./tester.sh","obj1_1_test","obj1_2_test","obj1_3_test","obj1_4_test","obj2_1_test","obj2_2_test","obj2_3_test","obj2_4_test","obj3_1_test","obj3_2_test"]
