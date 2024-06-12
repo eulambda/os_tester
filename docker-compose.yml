@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  xv6:
+    image: xv6:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    tty: true
+    ports:
+      - 22:22
+    volumes:
+      - ./shared-data:/app/shared-data
+    stdin_open: true
+    platform: linux/amd64
