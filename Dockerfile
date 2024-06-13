@@ -13,6 +13,7 @@ WORKDIR /app/csi3101-xv6
 # sync .vimrc
 COPY to-copy/xv6_submission.tar .
 RUN tar -xvf xv6_submission.tar
+COPY to-copy/param.h .
 COPY to-copy/test_src/ ./
 COPY to-copy/tester.sh .
 RUN chmod +x ./tester.sh
