@@ -1,0 +1,226 @@
+diff --git a/mmap_utils.h b/mmap_utils.h
+index d3b7472..bc5087c 100644
+--- a/mmap_utils.h
++++ b/mmap_utils.h
+@@ -4,6 +4,7 @@ struct mmap_area
+ {
+     int user_nr;
+     int len;
++    int len_raw;
+     int offset;
+     int flags;
+     void *ptr;
+diff --git a/shared-data/diff.txt b/shared-data/diff.txt
+index 1fa0f82..e69de29 100644
+--- a/shared-data/diff.txt
++++ b/shared-data/diff.txt
+@@ -1,115 +0,0 @@
+-1577870014 337920 xv6_submission_original.tar
+-1378195387 337920 xv6_submission.tar
+-diff --git a/mmap_utils.h b/mmap_utils.h
+-index d3b7472..bc5087c 100644
+---- a/mmap_utils.h
+-+++ b/mmap_utils.h
+-@@ -4,6 +4,7 @@ struct mmap_area
+- {
+-     int user_nr;
+-     int len;
+-+    int len_raw;
+-     int offset;
+-     int flags;
+-     void *ptr;
+-diff --git a/shared-data/diff.txt b/shared-data/diff.txt
+-index e69de29..0a3bdfa 100644
+---- a/shared-data/diff.txt
+-+++ b/shared-data/diff.txt
+-@@ -0,0 +1,2 @@
+-+1577870014 337920 xv6_submission_original.tar
+-+1378195387 337920 xv6_submission.tar
+-diff --git a/sysfile.c b/sysfile.c
+-index 2824bb3..fee00f0 100644
+---- a/sysfile.c
+-+++ b/sysfile.c
+-@@ -104,6 +104,8 @@ int sys_close(void)
+-   struct mmap_area **proc_areas = me->mmap_areas;
+-   for (int i = 0; i < MAP_AREA_NR_PER_PROCESS; i++)
+-   {
+-+    if (!*(proc_areas + i))
+-+      continue;
+-     if (is_file_equal(f, (*(proc_areas + i))->file))
+-     {
+-       dealloc_mmap(me->pgdir, *(proc_areas + i));
+-@@ -506,14 +508,14 @@ int munmap(void *ptr, int len)
+- {
+-   if (ptr == 0 || (int)ptr % PGSIZE > 0)
+-     return -1;
+--  if (len == 0 || len % PGSIZE > 0)
+-+  if (len == 0)
+-     return -1;
+- 
+-   struct mmap_area *area = find_mmap(ptr);
+-   if (!area)
+-     return 0;
+-   pde_t *pgdir = myproc()->pgdir;
+--  if (area->len == len)
+-+  if (area->len_raw == len)
+-   {
+-     dealloc_mmap(pgdir, area);
+-     flush_tlb();
+-diff --git a/trap.c b/trap.c
+-index 05ef979..c4aa452 100644
+---- a/trap.c
+-+++ b/trap.c
+-@@ -50,7 +50,7 @@ void trap(struct trapframe *tf)
+-     if (serve_page(rcr2(), tf->err & 2))
+-       break;
+-     cprintf("unexpected page fault: rcr2=%p, err=%d\n", rcr2(), tf->err);
+--    panic("trap: page_fault");
+-+    myproc()->killed = 1;
+-     break;
+-   case T_IRQ0 + IRQ_TIMER:
+-     if (cpuid() == 0)
+-diff --git a/vm.c b/vm.c
+-index 040ab5c..600c177 100644
+---- a/vm.c
+-+++ b/vm.c
+-@@ -461,6 +461,7 @@ void dealloc_mmap(pde_t *pgdir, struct mmap_area *area)
+-   release(&mmap_table.lock);
+-   pte_t *pte;
+-   uint padr;
+-+  uint foff = f->off;
+-   for (uint uadr = uadr_begin; uadr < uadr_end; uadr += PGSIZE)
+-   {
+-     pte = walkpgdir(pgdir, (char *)uadr, 0);
+-@@ -481,7 +482,7 @@ void dealloc_mmap(pde_t *pgdir, struct mmap_area *area)
+-     kfree(v);
+-     *pte = 0;
+-   }
+--
+-+  f->off = foff;
+-   fileclose(f);
+- }
+- int is_file_equal(struct file *lhs, struct file *rhs)
+-@@ -501,6 +502,8 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+-   struct mmap_area *area = 0;
+-   struct mmap_area **proc_area = 0;
+-   struct mmap_area **proc_areas = myproc()->mmap_areas;
+-+  int len_raw = len;
+-+  len = PGROUNDUP(len);
+-   if (len == 0 || len % PGSIZE > 0)
+-     return 0;
+- 
+-@@ -585,6 +588,7 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+-   ++area->user_nr;
+-   area->file = f;
+-   area->len = len;
+-+  area->len_raw = len_raw;
+-   area->offset = offset;
+-   area->flags = flags;
+-   *proc_area = area;
+-@@ -594,8 +598,11 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+- }
+- int load_mmap(uint uadr, struct mmap_area *area)
+- {
+-+  uint foff = area->file->off;
+-   area->file->off = area->offset + uadr - (uint)area->ptr;
+--  if (fileread(area->file, (char *)uadr, PGSIZE) < 0)
+-+  int read_count = fileread(area->file, (char *)uadr, PGSIZE);
+-+  area->file->off = foff;
+-+  if (read_count < 0)
+-     return 0;
+-   return 1;
+- }
+diff --git a/sysfile.c b/sysfile.c
+index 2824bb3..fee00f0 100644
+--- a/sysfile.c
++++ b/sysfile.c
+@@ -104,6 +104,8 @@ int sys_close(void)
+   struct mmap_area **proc_areas = me->mmap_areas;
+   for (int i = 0; i < MAP_AREA_NR_PER_PROCESS; i++)
+   {
++    if (!*(proc_areas + i))
++      continue;
+     if (is_file_equal(f, (*(proc_areas + i))->file))
+     {
+       dealloc_mmap(me->pgdir, *(proc_areas + i));
+@@ -506,14 +508,14 @@ int munmap(void *ptr, int len)
+ {
+   if (ptr == 0 || (int)ptr % PGSIZE > 0)
+     return -1;
+-  if (len == 0 || len % PGSIZE > 0)
++  if (len == 0)
+     return -1;
+ 
+   struct mmap_area *area = find_mmap(ptr);
+   if (!area)
+     return 0;
+   pde_t *pgdir = myproc()->pgdir;
+-  if (area->len == len)
++  if (area->len_raw == len)
+   {
+     dealloc_mmap(pgdir, area);
+     flush_tlb();
+diff --git a/trap.c b/trap.c
+index 05ef979..c4aa452 100644
+--- a/trap.c
++++ b/trap.c
+@@ -50,7 +50,7 @@ void trap(struct trapframe *tf)
+     if (serve_page(rcr2(), tf->err & 2))
+       break;
+     cprintf("unexpected page fault: rcr2=%p, err=%d\n", rcr2(), tf->err);
+-    panic("trap: page_fault");
++    myproc()->killed = 1;
+     break;
+   case T_IRQ0 + IRQ_TIMER:
+     if (cpuid() == 0)
+diff --git a/vm.c b/vm.c
+index 040ab5c..600c177 100644
+--- a/vm.c
++++ b/vm.c
+@@ -461,6 +461,7 @@ void dealloc_mmap(pde_t *pgdir, struct mmap_area *area)
+   release(&mmap_table.lock);
+   pte_t *pte;
+   uint padr;
++  uint foff = f->off;
+   for (uint uadr = uadr_begin; uadr < uadr_end; uadr += PGSIZE)
+   {
+     pte = walkpgdir(pgdir, (char *)uadr, 0);
+@@ -481,7 +482,7 @@ void dealloc_mmap(pde_t *pgdir, struct mmap_area *area)
+     kfree(v);
+     *pte = 0;
+   }
+-
++  f->off = foff;
+   fileclose(f);
+ }
+ int is_file_equal(struct file *lhs, struct file *rhs)
+@@ -501,6 +502,8 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+   struct mmap_area *area = 0;
+   struct mmap_area **proc_area = 0;
+   struct mmap_area **proc_areas = myproc()->mmap_areas;
++  int len_raw = len;
++  len = PGROUNDUP(len);
+   if (len == 0 || len % PGSIZE > 0)
+     return 0;
+ 
+@@ -585,6 +588,7 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+   ++area->user_nr;
+   area->file = f;
+   area->len = len;
++  area->len_raw = len_raw;
+   area->offset = offset;
+   area->flags = flags;
+   *proc_area = area;
+@@ -594,8 +598,11 @@ struct mmap_area *alloc_mmap(struct file *f, int offset, int len, int flags)
+ }
+ int load_mmap(uint uadr, struct mmap_area *area)
+ {
++  uint foff = area->file->off;
+   area->file->off = area->offset + uadr - (uint)area->ptr;
+-  if (fileread(area->file, (char *)uadr, PGSIZE) < 0)
++  int read_count = fileread(area->file, (char *)uadr, PGSIZE);
++  area->file->off = foff;
++  if (read_count < 0)
+     return 0;
+   return 1;
+ }
